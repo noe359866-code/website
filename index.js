@@ -7,9 +7,10 @@
  * - `createAddon()` devuelve la app Express sin escuchar, útil para tests o
  *   despliegues serverless (basta exportarla como handler).
  *
- * Aquí se conectan los scrapers con los handlers de Stremio. Por ahora los
- * handlers devuelven resultados vacíos; a medida que se implementen scrapers
- * (extendiendo `BaseScraper`), se registran en `handlers`.
+ * Los scrapers se registran en `src/scrapers/registry.js` y el orquestador los
+ * ejecuta en paralelo para el endpoint `/stream/:type/:id.json`. El resto de
+ * handlers (catálogo y meta) siguen siendo inyectables y devuelven vacío si no
+ * se configuran.
  */
 
 import { resolve } from 'node:path';
@@ -18,6 +19,8 @@ import { pathToFileURL } from 'node:url';
 import { createApp, startServer } from './src/core/server.js';
 import { createManifest } from './src/core/manifest.js';
 import { listSources } from './src/config/sources.js';
+import { StreamOrchestrator } from './src/services/stream.orchestrator.js';
+import { getActiveScrapers } from './src/scrapers/registry.js';
 
 export { createApp, startServer } from './src/core/server.js';
 export { createManifest, manifest } from './src/core/manifest.js';
@@ -36,6 +39,21 @@ export {
 	stripAccents
 } from './src/utils/sanitizer.js';
 export {
+	StreamOrchestrator,
+	createStreamOrchestrator,
+	dedupeStreams,
+	sanitizeStream,
+	emptyStreams
+} from './src/services/stream.orchestrator.js';
+export {
+	SCRAPER_CATEGORIES,
+	registerScraper,
+	registerScrapers,
+	unregisterScraper,
+	listScrapers,
+	getActiveScrapers
+} from './src/scrapers/registry.js';
+export {
 	SOURCES,
 	DEFAULT_TIMEOUT_MS,
 	MAX_TIMEOUT_MS,
@@ -45,24 +63,53 @@ export {
 } from './src/config/sources.js';
 
 /**
- * Construye la app del addon con sus handlers y su endpoint de salud.
+ * Construye la app del addon, el orquestador de streams y su endpoint de salud.
+ *
+ * El handler de `/stream` se conecta automáticamente al orquestador; se puede
+ * sustituir con `options.handlers.stream` o inyectar un orquestador propio.
  *
  * @param {Object} [options]
  * @param {any} [options.manifest]       Manifest a servir.
  * @param {Object} [options.handlers]    `{ catalog, meta, stream }`.
+ * @param {object} [options.orchestrator] Instancia de `StreamOrchestrator`.
+ * @param {Array<object>} [options.scrapers] Scrapers; por defecto, los registrados.
  * @param {() => any} [options.getHealth] Datos extra para `/health`.
  * @param {Pick<Console, 'info' | 'warn' | 'error'>} [options.logger]
  * @param {boolean} [options.landing]    Página HTML en `/`.
  * @returns {import('express').Express}
  */
 export function createAddon(options = {}) {
-	return createApp({
+	const logger = options.logger ?? console;
+
+	const orchestrator =
+		options.orchestrator ??
+		new StreamOrchestrator({
+			scrapers: options.scrapers ?? getActiveScrapers(),
+			logger
+		});
+
+	const handlers = {
+		...options.handlers,
+		stream: options.handlers?.stream ?? ((context) => orchestrator.getStreams(context))
+	};
+
+	const getHealth = () => {
+		const base = options.getHealth ? options.getHealth() : sourcesHealth();
+		return { ...base, streams: orchestrator.health() };
+	};
+
+	const app = createApp({
 		manifest: options.manifest ?? createManifest(),
-		handlers: options.handlers ?? {},
-		getHealth: options.getHealth ?? sourcesHealth,
-		logger: options.logger ?? console,
+		handlers,
+		getHealth,
+		logger,
 		landing: options.landing
 	});
+
+	// Accesible para inspección/tests sin acoplar el resto del código.
+	app.locals.streamOrchestrator = orchestrator;
+
+	return app;
 }
 
 /**
@@ -99,11 +146,17 @@ export function main(options = {}) {
 		`[addon] fuentes activas: ${sources.length > 0 ? sources.map((source) => source.id).join(', ') : 'ninguna'}`
 	);
 
-	const { app, server } = startServer({
-		port,
-		host,
-		getHealth: sourcesHealth
-	});
+	const app = options.app ?? createAddon(options);
+
+	const orchestrator = app.locals?.streamOrchestrator;
+	if (orchestrator) {
+		const scrapers = orchestrator.health().scrapers.filter((scraper) => scraper.enabled);
+		console.info(
+			`[addon] scrapers activos: ${scrapers.length > 0 ? scrapers.map((scraper) => scraper.id).join(', ') : 'ninguno'}`
+		);
+	}
+
+	const { server } = startServer({ port, host, app });
 
 	registerShutdown(server);
 	registerProcessGuards();

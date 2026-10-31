@@ -193,10 +193,11 @@ export function startServer(options = {}) {
 		port = Number(process.env.PORT) || 7000,
 		host = process.env.HOST || '0.0.0.0',
 		logger = console,
+		app: providedApp,
 		...appOptions
 	} = options;
 
-	const app = createApp({ ...appOptions, logger });
+	const app = providedApp ?? createApp({ ...appOptions, logger });
 	const server = app.listen(port, host, () => {
 		const address = server.address();
 		const actualPort = typeof address === 'object' && address ? address.port : port;
