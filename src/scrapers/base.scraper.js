@@ -172,6 +172,9 @@ export class BaseScraper {
 		/** Lista efectiva de espejos, en orden de intento. */
 		this.mirrors = resolveMirrors(normalized);
 
+		/** Último espejo que respondió correctamente (útil para resolver URLs). */
+		this.lastMirror = null;
+
 		/** @type {Map<string, { failures: number, successes: number, lastError: string|null, cooldownUntil: number }>} */
 		this.mirrorState = new Map();
 
@@ -288,6 +291,7 @@ export class BaseScraper {
 				}
 
 				this.recordSuccess(mirror);
+				this.lastMirror = mirror;
 				this.stats.successes += 1;
 
 				if (index > 0) {

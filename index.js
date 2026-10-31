@@ -23,6 +23,7 @@ import { createManifest } from './src/core/manifest.js';
 import { listSources } from './src/config/sources.js';
 import { StreamOrchestrator } from './src/services/stream.orchestrator.js';
 import { getActiveScrapers } from './src/scrapers/registry.js';
+import { registerBuiltInScrapers } from './src/scrapers/index.js';
 
 export {
 	createApp,
@@ -62,6 +63,17 @@ export {
 	getActiveScrapers
 } from './src/scrapers/registry.js';
 export {
+	HtmlScraper,
+	ArchiveOrgScraper,
+	createMovieScrapers,
+	createAnimeScrapers,
+	createDoramaScrapers,
+	createTelenovelaScrapers,
+	createCartoonScrapers,
+	getBuiltInScrapers,
+	registerBuiltInScrapers
+} from './src/scrapers/index.js';
+export {
 	SOURCES,
 	DEFAULT_TIMEOUT_MS,
 	MAX_TIMEOUT_MS,
@@ -81,6 +93,7 @@ export {
  * @param {Object} [options.handlers]    `{ catalog, meta, stream }`.
  * @param {object} [options.orchestrator] Instancia de `StreamOrchestrator`.
  * @param {Array<object>} [options.scrapers] Scrapers; por defecto, los registrados.
+ * @param {boolean} [options.registerBuiltIns=true] Registrar los scrapers integrados.
  * @param {boolean|object} [options.proxy] Configuración de `/proxy-stream`.
  * @param {() => any} [options.getHealth] Datos extra para `/health`.
  * @param {Pick<Console, 'info' | 'warn' | 'error'>} [options.logger]
@@ -89,6 +102,9 @@ export {
  */
 export function createAddon(options = {}) {
 	const logger = options.logger ?? console;
+
+	// Scrapers integrados (hoy, la fuente legal de dominio público).
+	if (options.registerBuiltIns !== false) registerBuiltInScrapers();
 
 	const orchestrator =
 		options.orchestrator ??

@@ -87,6 +87,22 @@ export const SOURCES = {
 		notes: 'Endpoint GraphQL (requiere POST). Sirve como respaldo de metadatos.'
 	},
 
+	archive_org: {
+		id: 'archive_org',
+		name: 'Internet Archive (dominio público)',
+		category: 'stream',
+		scraper: 'archive-org',
+		enabled: true,
+		priority: 50,
+		baseUrl: 'https://archive.org',
+		mirrors: ['https://archive.org'],
+		headers: {
+			Accept: 'application/json'
+		},
+		notes:
+			'Biblioteca digital sin ánimo de lucro. Solo se consultan películas de la colección pública `feature_films`.'
+	},
+
 	example_streams: {
 		id: 'example_streams',
 		name: 'Proveedor de ejemplo (plantilla)',
