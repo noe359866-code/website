@@ -23,6 +23,19 @@ export { createApp, startServer } from './src/core/server.js';
 export { createManifest, manifest } from './src/core/manifest.js';
 export { BaseScraper, USER_AGENTS, REQUEST_TIMEOUT_MS } from './src/scrapers/base.scraper.js';
 export {
+	TitleResolver,
+	createResolver,
+	resolveTitle,
+	resolver as titleResolver,
+	parseStremioId
+} from './src/services/resolver.service.js';
+export {
+	sanitizeForUrl,
+	slugify,
+	normalizeTitle,
+	stripAccents
+} from './src/utils/sanitizer.js';
+export {
 	SOURCES,
 	DEFAULT_TIMEOUT_MS,
 	MAX_TIMEOUT_MS,
