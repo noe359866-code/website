@@ -31,7 +31,6 @@
 import axios from 'axios';
 import {
 	DEFAULT_TIMEOUT_MS,
-	MAX_TIMEOUT_MS,
 	MIRROR_COOLDOWN_MS,
 	MIRROR_FAILURE_THRESHOLD,
 	clampTimeout,
