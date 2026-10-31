@@ -4,8 +4,10 @@
  *
  * - `npm start` (o `node index.js`) levanta el servidor HTTP en `PORT` (7000
  *   por defecto) escuchando en 0.0.0.0, listo para Beamup o cualquier PaaS.
- * - `createAddon()` devuelve la app Express sin escuchar, útil para tests o
- *   despliegues serverless (basta exportarla como handler).
+ * - `createAddon()` devuelve la app Express + SDK sin escuchar, útil para tests
+ *   o despliegues serverless (basta exportarla como handler).
+ * - `registerProcessGuards()` instala escuchas de `unhandledRejection` y
+ *   `uncaughtException` para que un fallo aislado no apague el proceso.
  *
  * Los scrapers se registran en `src/scrapers/registry.js` y el orquestador los
  * ejecuta en paralelo para el endpoint `/stream/:type/:id.json`. El resto de
@@ -22,7 +24,13 @@ import { listSources } from './src/config/sources.js';
 import { StreamOrchestrator } from './src/services/stream.orchestrator.js';
 import { getActiveScrapers } from './src/scrapers/registry.js';
 
-export { createApp, startServer } from './src/core/server.js';
+export {
+	createApp,
+	startServer,
+	createAddonInterface,
+	createProxyStreamHandler,
+	buildProxyStreamUrl
+} from './src/core/server.js';
 export { createManifest, manifest } from './src/core/manifest.js';
 export { BaseScraper, USER_AGENTS, REQUEST_TIMEOUT_MS } from './src/scrapers/base.scraper.js';
 export {
@@ -73,6 +81,7 @@ export {
  * @param {Object} [options.handlers]    `{ catalog, meta, stream }`.
  * @param {object} [options.orchestrator] Instancia de `StreamOrchestrator`.
  * @param {Array<object>} [options.scrapers] Scrapers; por defecto, los registrados.
+ * @param {boolean|object} [options.proxy] Configuración de `/proxy-stream`.
  * @param {() => any} [options.getHealth] Datos extra para `/health`.
  * @param {Pick<Console, 'info' | 'warn' | 'error'>} [options.logger]
  * @param {boolean} [options.landing]    Página HTML en `/`.
@@ -102,6 +111,7 @@ export function createAddon(options = {}) {
 		manifest: options.manifest ?? createManifest(),
 		handlers,
 		getHealth,
+		proxy: options.proxy,
 		logger,
 		landing: options.landing
 	});
@@ -141,6 +151,8 @@ export function main(options = {}) {
 	const port = Number(options.port ?? process.env.PORT) || 7000;
 	const host = options.host ?? process.env.HOST ?? '0.0.0.0';
 
+	registerProcessGuards();
+
 	const sources = listSources();
 	console.info(
 		`[addon] fuentes activas: ${sources.length > 0 ? sources.map((source) => source.id).join(', ') : 'ninguna'}`
@@ -159,7 +171,6 @@ export function main(options = {}) {
 	const { server } = startServer({ port, host, app });
 
 	registerShutdown(server);
-	registerProcessGuards();
 
 	return { app, server };
 }
@@ -198,16 +209,38 @@ function registerShutdown(server) {
 	process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
-/** Evita que un rechazo no controlado tumbe el proceso sin dejar rastro. */
-function registerProcessGuards() {
+let processGuardsInstalled = false;
+
+/**
+ * Instala escuchas de seguridad globales para que un fallo aislado no apague
+ * el proceso de Node (Beamup reiniciaría el addon y Stremio vería errores).
+ *
+ * - `unhandledRejection`: se registra y se continúa.
+ * - `uncaughtException`: se registra y se continúa (por defecto). Un estado
+ *   inconsistente es posible, pero la prioridad del addon es seguir sirviendo;
+ *   con `EXIT_ON_UNCAUGHT_EXCEPTION=true` se sale con código 1.
+ *
+ * La instalación es idempotente: llamarla varias veces no duplica escuchas.
+ *
+ * @returns {boolean} `true` si las escuchas se instalaron en esta llamada.
+ */
+export function registerProcessGuards() {
+	if (processGuardsInstalled) return false;
+	processGuardsInstalled = true;
+
 	process.on('unhandledRejection', (reason) => {
 		console.warn(`[addon] promesa rechazada sin manejar: ${reason?.stack ?? reason}`);
 	});
 
 	process.on('uncaughtException', (error) => {
 		console.error(`[addon] excepción no capturada: ${error?.stack ?? error}`);
-		process.exit(1);
+
+		if (process.env.EXIT_ON_UNCAUGHT_EXCEPTION === 'true') {
+			process.exit(1);
+		}
 	});
+
+	return true;
 }
 
 /** `true` si el módulo se ejecutó directamente (`node index.js`). */
